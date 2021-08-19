@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/akrylysov/pogreb"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/joho/godotenv"
 	"github.com/vartanbeno/go-reddit/v2/reddit"
@@ -23,6 +24,8 @@ const (
 	sendToTelegramDelay = time.Second * 10
 
 	redditBaseURL = "https://www.reddit.com/"
+
+	storeFile = "store.db"
 )
 
 func main() {
@@ -53,7 +56,12 @@ func main() {
 		log.Fatalf("telegram bot error: %v", err)
 	}
 
-	lastID := ""
+	store, err := pogreb.Open(storeFile, nil)
+	if err != nil {
+		log.Fatalf("open store: %v", err)
+	}
+
+	defer store.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -71,8 +79,7 @@ loop:
 
 		select {
 		case <-ticker.C:
-			lastID, err = runReddit(ctx, redisClient, lastID, messageQueue)
-			if err != nil {
+			if err := runReddit(ctx, redisClient, store, messageQueue); err != nil {
 				fmt.Printf("run error: %v", err)
 			}
 		case <-ctx.Done():
@@ -84,22 +91,27 @@ loop:
 	wg.Wait()
 }
 
-func runReddit(ctx context.Context, client *reddit.Client, lastID string, messageQueue chan reddit.Post) (string, error) {
+func runReddit(ctx context.Context, client *reddit.Client, store *pogreb.DB, messageQueue chan reddit.Post) error {
 	subreddit := os.Getenv("SUBREDDIT")
 
 	posts, _, err := client.Subreddit.NewPosts(ctx, subreddit, &reddit.ListOptions{
 		Limit: limit,
 	})
 	if err != nil {
-		return "", fmt.Errorf("get new posts subreddit=%s: %v", subreddit, err)
+		return fmt.Errorf("get new posts subreddit=%s: %v", subreddit, err)
+	}
+
+	lastID, err := store.Get([]byte(subreddit))
+	if err != nil {
+		return fmt.Errorf("get last id from store: %v", err)
 	}
 
 	if len(posts) == 0 {
-		return lastID, nil
+		return nil
 	}
 
 	for _, post := range posts {
-		if post.FullID == lastID {
+		if lastID != nil && post.FullID == string(lastID) {
 			break
 		}
 		messageQueue <- *post
@@ -110,7 +122,11 @@ func runReddit(ctx context.Context, client *reddit.Client, lastID string, messag
 	fmt.Printf("Received %d posts.\n", len(posts))
 	fmt.Printf("LastID: %s\n", lastPostID)
 
-	return lastPostID, nil
+	if err := store.Put([]byte(subreddit), []byte(lastPostID)); err != nil {
+		return fmt.Errorf("put last id to store")
+	}
+
+	return nil
 }
 
 func runTelegram(ctx context.Context, wg *sync.WaitGroup, tgbot *tgbotapi.BotAPI, messageQueue chan reddit.Post) {

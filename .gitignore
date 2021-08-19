@@ -1,3 +1,5 @@
 .vscode/
 vendor/
+store.db/
+bin/
 .env
