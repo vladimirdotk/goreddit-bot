@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -8,10 +9,18 @@ import (
 )
 
 func main() {
-	credentials := reddit.Credentials{ID: "id", Secret: "secret", Username: "username", Password: "password"}
-	client, err := reddit.NewClient(credentials)
+	client, err := reddit.NewReadonlyClient()
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
-	fmt.Print("test", client.ID)
+	posts, _, err := client.Subreddit.TopPosts(context.Background(), "golang", &reddit.ListPostOptions{
+		ListOptions: reddit.ListOptions{
+			Limit: 5,
+		},
+		Time: "all",
+	})
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
+	fmt.Printf("Received %d posts.\n", len(posts))
 }
