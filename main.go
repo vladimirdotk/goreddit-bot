@@ -23,7 +23,7 @@ const (
 	checkRedditDelay    = time.Minute * 1
 	sendToTelegramDelay = time.Second * 10
 
-	redditBaseURL = "https://www.reddit.com/"
+	redditBaseURL = "https://www.reddit.com"
 
 	storeFile = "store.db"
 )
